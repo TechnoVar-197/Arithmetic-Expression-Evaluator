@@ -1,218 +1,143 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <ctype.h>
+#include <stdarg.h>
 
-// Forward declaration of parse_expr
-ASTNode* parse_expr(const char *input, int *pos);
-
-// Token Types
+// Enumeration to represent the types of tokens in arithmetic expressions
 typedef enum {
-    TOKEN_INT, TOKEN_PLUS, TOKEN_MINUS, TOKEN_MUL, TOKEN_DIV,
-    TOKEN_LPAREN, TOKEN_RPAREN, TOKEN_EOF
+    T_NUMBER,   // Represents a numeric value
+    T_PLUS,     // Represents the '+' operator
+    T_MINUS,    // Represents the '-' operator
+    T_MUL,      // Represents the '*' operator
+    T_DIV,      // Represents the '/' operator
+    T_LPAREN,   // Represents the '(' operator
+    T_RPAREN,   // Represents the ')' operator
+    T_EOF       // End of File token used to signify the end of input
 } TokenType;
 
-// Token Structure
-typedef struct {
-    TokenType type;
-    char* value;
+// Structure to hold the token data
+typedef struct Token {
+    TokenType type;   // Type of token
+    double value;     // Holds the numeric value if it's a number
 } Token;
 
-// AST Node Types
-typedef enum {
-    AST_NUMBER, AST_BINARY_OP
-} ASTNodeType;
+// Function prototypes
+Token *get_next_token(const char **input);
+void eat(TokenType type, const char **input);
+double expr(const char **input);
 
-// AST Node Structure
-typedef struct ASTNode {
-    ASTNodeType type;
-    union {
-        struct { struct ASTNode* left; char op; struct ASTNode* right; } binop;
-        int val;
-    } data;
-} ASTNode;
+Token *cur_token = NULL; // Global variable to hold the current token
 
-Token* lexer(const char *input, int *pos) {
-    while (isspace(input[*pos])) (*pos)++;
-    char current_char = input[*pos];
-
-    if (current_char == '\0') {
-        Token* token = (Token*)malloc(sizeof(Token));
-        token->type = TOKEN_EOF;
-        token->value = NULL;
-        return token;
-    }
-
-    if (isdigit(current_char)) {
-        int start = *pos;
-        while (isdigit(input[*pos])) (*pos)++;
-        char* value = (char*)malloc((*pos - start + 1) * sizeof(char));
-        strncpy(value, &input[start], *pos - start);
-        value[*pos - start] = '\0';
-
-        Token* token = (Token*)malloc(sizeof(Token));
-        token->type = TOKEN_INT;
-        token->value = value;
-        printf("Lexer: Found NUMBER token with value %s\n", value); // Debug statement
-        return token;
-    }
-
-    Token* token = (Token*)malloc(sizeof(Token));
-    token->value = NULL;
-    switch (current_char) {
-        case '+': token->type = TOKEN_PLUS; break;
-        case '-': token->type = TOKEN_MINUS; break;
-        case '*': token->type = TOKEN_MUL; break;
-        case '/': token->type = TOKEN_DIV; break;
-        case '(': token->type = TOKEN_LPAREN; break;
-        case ')': token->type = TOKEN_RPAREN; break;
-        default:
-            printf("Lexer Error: Unknown character %c\n", current_char);
-            exit(1);
-    }
-    printf("Lexer: Found token %c\n", current_char); // Debug statement
-    (*pos)++;
-    return token;
-}
-
-ASTNode* parse_factor(const char *input, int *pos) {
-    Token* token = lexer(input, pos);
-    if (token->type == TOKEN_INT) {
-        ASTNode* node = (ASTNode*)malloc(sizeof(ASTNode));
-        node->type = AST_NUMBER;
-        node->data.val = atoi(token->value);
-        printf("Parser: Constructed AST node for number %d\n", node->data.val); // Debug statement
-        free(token->value);
-        free(token);
-        return node;
-    } else if (token->type == TOKEN_LPAREN) {
-        ASTNode* node = parse_expr(input, pos);
-        Token* next_token = lexer(input, pos);
-        if (next_token->type!= TOKEN_RPAREN) {
-            fprintf(stderr, "Error: expected ')'\n");
-            exit(1);
-        }
-        free(next_token);
-        return node;
-    }
-    fprintf(stderr, "Error: expected number or '('\n");
+// Error handling function using variadic arguments
+void error(const char *fmt, ...) {
+    va_list args;
+    fprintf(stderr, "Error: ");
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+    fprintf(stderr, "\n");
     exit(1);
 }
 
-ASTNode* parse_term(const char *input, int *pos) {
-    ASTNode* node = parse_factor(input, pos);
-    Token* token = lexer(input, pos);
+// Retrieves the next token from the input
+Token *get_next_token(const char **input) {
+    const char *s = *input;
+    while (isspace(*s) && *s != '\n') s++; // Skip whitespace but not newline
 
-    while (token->type == TOKEN_MUL || token->type == TOKEN_DIV) {
-        char op = token->type == TOKEN_MUL? '*' : '/';
-        ASTNode* new_node = (ASTNode*)malloc(sizeof(ASTNode));
-        new_node->type = AST_BINARY_OP;
-        new_node->data.binop.left = node;
-        new_node->data.binop.op = op;
-        new_node->data.binop.right = parse_factor(input, pos);
-        node = new_node;
-        printf("Parser: Constructed AST node for operation '%c'\n", op); // Debug statement
-        free(token);
-        token = lexer(input, pos);
-    }
-    free(token);
-    return node;
-}
-
-ASTNode* parse_expr(const char *input, int *pos) {
-    ASTNode* node = parse_term(input, pos);
-    Token* token = lexer(input, pos);
-
-    while (token->type == TOKEN_PLUS || token->type == TOKEN_MINUS) {
-        char op = token->type == TOKEN_PLUS? '+' : '-';
-        ASTNode* new_node = (ASTNode*)malloc(sizeof(ASTNode));
-        new_node->type = AST_BINARY_OP;
-        new_node->data.binop.left = node;
-        new_node->data.binop.op = op;
-        node = new_node;
-        printf("Parser: Constructed AST node for operation '%c'\n", op); // Debug statement
-        free(token);
-        token = lexer(input, pos);
-        node->data.binop.right = parse_expr(input, pos); // Recursively call parse_expr
-    }
-    free(token);
-    return node;
-}
-
-void generate_code(ASTNode* node) {
-    if (node == NULL) return;
-    switch (node->type) {
-        case AST_NUMBER:
-            printf("Generate Code: Push number %d\n", node->data.val);
-            break;
-        case AST_BINARY_OP:
-            generate_code(node->data.binop.left);
-            generate_code(node->data.binop.right);
-            printf("Generate Code: Perform operation '%c'\n", node->data.binop.op);
-            break;
-    }
-}
-
-// Free AST
-void free_ast(ASTNode* node) {
-    if (node == NULL) return;
-    switch (node->type) {
-        case AST_NUMBER:
-            // No additional memory to free if it's a number
-            break;
-        case AST_BINARY_OP:
-            // Recursively free left and right children
-            free_ast(node->data.binop.left);
-            free_ast(node->data.binop.right);
-            break;
-    }
-    free(node); // Free the node itself
-}
-
-int main() {
-    char input[100];
-    printf("Enter an arithmetic expression: ");
-    fgets(input, sizeof(input), stdin);
-    int pos = 0;
-    ASTNode* root = parse_expr(input, &pos);
-
-    Token* token = lexer(input, &pos);
-    // Additional check after parsing to make sure no unprocessed input remains.
-    while (isspace(input[pos])) pos++;  // Skip any trailing whitespace after the expression
-    if (input[pos] != '\0' && input[pos] != '\n') { // Checking for unprocessed characters
-        fprintf(stderr, "Unexpected tokens after expression.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    generate_code(root);
-free_ast(root);
-    free(token);
-
-    // Calculate the final result
-    int result = 0;
-    ASTNode* current_node = root;
-    while (current_node->type == AST_BINARY_OP) {
-        ASTNode* left_child = current_node->data.binop.left;
-        ASTNode* right_child = current_node->data.binop.right;
-        switch (current_node->data.binop.op) {
-            case '+':
-                result += left_child->data.val + right_child->data.val;
-                break;
-            case '-':
-                result += left_child->data.val - right_child->data.val;
-                break;
-            case '*':
-                result += left_child->data.val * right_child->data.val;
-                break;
-            case '/':
-                result += left_child->data.val / right_child->data.val;
-                break;
+    Token *t = calloc(1, sizeof(Token));
+    if (isdigit(*s) || (*s == '.' && isdigit(*(s + 1)))) { // Check if it's a number
+        t->type = T_NUMBER;
+        t->value = strtod(s, (char **)&s);
+        printf("Token: Number (%f)\n", t->value);
+    } else if (*s == '\n' || *s == '\0') { // Newline or NULL character
+        t->type = T_EOF;
+    } else {
+        switch (*s) {
+            case '+': t->type = T_PLUS; break;
+            case '-': t->type = T_MINUS; break;
+            case '*': t->type = T_MUL; break;
+            case '/': t->type = T_DIV; break;
+            case '(': t->type = T_LPAREN; break;
+            case ')': t->type = T_RPAREN; break;
+            default: error("Unexpected character: %c", *s);
         }
-        current_node = left_child;
+        printf("Token: %c\n", *s);
+        s++;
     }
+    *input = s;
+    return t;
+}
 
-    // Print the final result
-    printf("Result: %d\n", result);
+// Advances the current token if it matches the expected type
+void eat(TokenType type, const char **input) {
+    if (cur_token->type == type) {
+        free(cur_token);
+        cur_token = get_next_token(input);
+    } else {
+        error("Unexpected token: %d, expected: %d", cur_token->type, type);
+    }
+}
 
+// Parses a factor from the expression
+double factor(const char **input) {
+    printf("Parse factor\n");
+    if (cur_token->type == T_NUMBER) {
+        double value = cur_token->value;
+        eat(T_NUMBER, input);
+        return value;
+    } else if (cur_token->type == T_LPAREN) {
+        eat(T_LPAREN, input);
+        double value = expr(input);
+        eat(T_RPAREN, input);
+        return value;
+    } else {
+        error("Invalid token for factor: %d", cur_token->type);
+    }
+}
+
+// Parses a term from the expression
+double term(const char **input) {
+    printf("Parse term\n");
+    double value = factor(input);
+    while (cur_token->type == T_MUL || cur_token->type == T_DIV) {
+        if (cur_token->type == T_MUL) {
+            eat(T_MUL, input);
+            value *= factor(input);
+        } else if (cur_token->type == T_DIV) {
+            eat(T_DIV, input);
+            value /= factor(input);
+        }
+    }
+    return value;
+}
+
+// Parses an expression from the input
+double expr(const char **input) {
+    printf("Parse expression\n");
+    double value = term(input);
+    while (cur_token->type == T_PLUS || cur_token->type == T_MINUS) {
+        if (cur_token->type == T_PLUS) {
+            eat(T_PLUS, input);
+            value += term(input);
+        } else if (cur_token->type == T_MINUS) {
+            eat(T_MINUS, input);
+            value -= term(input);
+        }
+    }
+    return value;
+}
+
+// Main function
+int main() {
+    printf("Enter an expression and press enter: ");
+    fflush(stdout); // Make sure prompt is visible immediately
+    char input[1024];
+    if (fgets(input, sizeof(input), stdin) != NULL) {
+        const char *input_ptr = input;
+        cur_token = get_next_token(&input_ptr);
+        double result = expr(&input_ptr);
+        printf("Result: %f\n", result);
+        free(cur_token);
+    }
     return 0;
 }
